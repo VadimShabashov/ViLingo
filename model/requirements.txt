@@ -38,3 +38,4 @@ torchaudio==2.1.0
 tqdm==4.66.1
 treetable==0.2.5
 typing_extensions==4.8.0
+collection==0.1.6

@@ -1,4 +1,7 @@
 import whisperx
+from collections import defaultdict
+
+SECRET_HG_TOKEN = "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"
 
 
 class STTModel:
@@ -9,7 +12,7 @@ class STTModel:
 
     def __call__(self, voice, batch_size=16):
         """
-        returns: list[dict(text:..., start:..., end:...),...]
+        returns: list[dict(text:..., start:..., end:..., speaker: ...),...]
         """
         # if you have problem with array, save file and uncomment it
         # voice = whisperx.load_audio(audio_file)
@@ -20,8 +23,22 @@ class STTModel:
                                 voice,
                                 self.device,
                                 return_char_alignments=False)
+        diarize_model = whisperx.DiarizationPipeline(use_auth_token=SECRET_HG_TOKEN, device=self.device)
+        diarize_segments = diarize_model(voice)
+
+        result = whisperx.assign_word_speakers(diarize_segments, result)
+
         res = []
+        speaker_times = defaultdict(list)
         for segment in result["segments"]:
+            list_of_words = segment["words"]
             segment.pop('words', None)
+            speakers = []
+            for i in list_of_words:
+                if "speaker" in i:
+                    speakers.append(i["speaker"])
+            cur_speaker = max(speakers, key=speakers.count) if len(speakers) > 0 else "UNKNOWN"
+            segment["speaker"] = cur_speaker
+            speaker_times[cur_speaker].append((segment["start"], segment["end"]))
             res.append(segment)
-        return res
+        return res, speaker_times
