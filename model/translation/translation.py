@@ -3,12 +3,13 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 class TranslationModel:
     def __init__(self):
-        self.model_name = 'model_name = "facebook/nllb-200-distilled-600M'
+        self.model_name = 'facebook/nllb-200-distilled-1.3B'
         self.tokenizer = self.load_tokenizer()
         self.translation_model = self.load_model()
 
     def load_tokenizer(self, src_language='ru'):
         src_language = self.get_language(src_language)
+
         tokenizer = AutoTokenizer.from_pretrained(
             self.model_name, src_lang=src_language
         )
@@ -63,6 +64,6 @@ class TranslationModel:
             forced_bos_token_id=self.tokenizer.lang_code_to_id[target_language],
             max_length=512
         )
-        translated_text = self.tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
 
+        translated_text = self.tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
         return translated_text
