@@ -1,5 +1,6 @@
 import whisperx
 
+
 class STTModel:
     def __init__(self, device, compute_type="float16"):
         self.device = device
