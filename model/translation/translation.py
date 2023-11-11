@@ -2,6 +2,9 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 
 class TranslationModel:
+    """
+    Text-to-text translation with NLLB-200
+    """
     def __init__(self):
         self.model_name = 'facebook/nllb-200-distilled-1.3B'
         self.tokenizer = self.load_tokenizer()
