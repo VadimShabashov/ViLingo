@@ -1,1 +1,2 @@
 git+https://github.com/m-bain/whisperx.git
+collection==0.1.6
