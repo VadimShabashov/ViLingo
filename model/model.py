@@ -4,67 +4,32 @@ from translation.translation import TranslationModel
 from tts.tts import TTSModel
 
 import os
-import torch
-import numpy as np
+import json
 import moviepy.editor
-import librosa
-from pathlib import Path
-from typing import List
-from scipy.io import wavfile
 from pydub import AudioSegment
-import soundfile as sf
 
 
 class Model:
-    NOISE_PATH = Path("noise.wav")
-    TRANSLATED_AUDIO_PATH = Path("translated_audio_path.wav")
-    TRANSLATED_VOICES_PATH = Path("translated_voices_path.wav")
-    VOICE_REFERENCE_PATH = Path("voice_reference_path.wav")
-
     def __init__(self):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         self.audio_separation_model = AudioSeparationModel()
-        self.stt_model = STTModel(self.device)
+        self.stt_model = STTModel()
         self.translation_model = TranslationModel()
-        self.tts_model = TTSModel(self.device)
+        self.tts_model = TTSModel()
 
     @staticmethod
-    def extract_and_save_audio_from_video(video_path):
+    def extract_and_save_audio_from_video(video_path, audio_path):
         """
         Extract audio from video, then save it to the file .wav
         """
 
         # Load the video
-        audio = moviepy.editor.VideoFileClip(video_path).audio
+        video = moviepy.editor.VideoFileClip(video_path)
 
         # Extract and save audio
-        video_path_no_extension = os.path.splitext(video_path)[0]
-        audio_path = video_path_no_extension + ".wav"
-        audio.write_audiofile(audio_path)
-
-        return audio_path, audio.fps
+        video.audio.write_audiofile(audio_path)
 
     @staticmethod
-    def fit_audio_length(audio, target_duration):
-        """
-        Fit audio to the provided target_duration
-        """
-
-        # Find rate for changing the speed
-        rate = audio.duration_seconds / target_duration
-
-        # Change speed
-        audio_fitted_length = librosa.effects.time_stretch(audio, rate=rate)
-
-        return audio_fitted_length
-
-    @staticmethod
-    def save_audio(audio, audio_path, samplerate):
-        sf.write(audio_path, audio, samplerate)
-
-    @staticmethod
-    def mix_audio(files: List[Path], mixed_path: Path):
+    def mix_audio(files, mixed_path):
         mixed = AudioSegment.from_file(files[0])
 
         for file in files[1:]:
@@ -74,23 +39,36 @@ class Model:
         mixed.export(mixed_path, format="wav")
 
     @staticmethod
-    def add_audio_by_timestamp(audio_segment, target_audio, start, end):
+    def add_audio_by_timestamp(audio_segment_path, target_audio_path, start_timestamp_ms):
         """
         Add audio to target audio by timestamp
         """
-        target_audio[start:end] = audio_segment
+
+        # Load target audio file
+        target_audio = AudioSegment.from_file(target_audio_path, format='wav')
+
+        # Load audio segment to be inserted
+        audio_segment = AudioSegment.from_file(audio_segment_path, format='wav')
+
+        # Mix (overlay) the insert audio onto the main audio at the specified timestamp
+        mixed_audio = target_audio.overlay(audio_segment, position=start_timestamp_ms)
+
+        # Save mixed
+        mixed_audio.export(target_audio_path, format="wav")
 
     @staticmethod
-    def read_audio(audio_path):
-        samplerate, data = wavfile.read(audio_path)
+    def create_empty_sound(target_audio_path, silent_audio_path):
+        # Get target audio
+        target_audio = AudioSegment.from_file(target_audio_path, format='wav')
 
-        if len(data.shape) == 1:
-            return data, samplerate
+        # Create similar silent audio
+        silent_audio = AudioSegment.silent(len(target_audio))
 
-        return data[:, 0], samplerate
+        # Save silent audio by path
+        silent_audio.export(silent_audio_path, format="wav")
 
     @staticmethod
-    def save_video_with_new_audio(video_path, translated_audio_path):
+    def save_video_with_new_audio(video_path, translated_audio_path, translated_video_path):
         # Convert audio to suitable format from numpy array
         translated_audio = moviepy.editor.AudioFileClip(translated_audio_path)
 
@@ -100,9 +78,6 @@ class Model:
         # Change audio
         translated_video = video.set_audio(translated_audio)
 
-        # Add '_translated' to filename
-        translated_video_path = os.path.splitext(video_path)[0] + '_translated' + os.path.splitext(video_path)[1]
-
         # Save video
         translated_video.write_videofile(translated_video_path)
 
@@ -110,78 +85,79 @@ class Model:
 
     def run(self, params):
         """
-        params: Dict(video_path, language, make_lipsync)
+        params: Dict(video_path, language)
         """
 
+        # Create paths
+        video_path = params['video_path']
+        video_path_no_extension = os.path.splitext(video_path)[0]
+        audio_path = video_path_no_extension + ".wav"
+        translated_audio_path = video_path_no_extension + "_translated" + ".wav"
+        translated_video_path = video_path_no_extension + "_translated" + ".mp4"
+        translations_with_timestamps_file_path = video_path_no_extension + "_translated" + ".json"
+
+        translated_voice_path = video_path_no_extension + "_translated_voice" + ".wav"
+        translated_voices_path = video_path_no_extension + "_translated_voices" + ".wav"
+        voice_reference_path = video_path_no_extension + "_voice_reference" + ".wav"
+
         # Extract and save audio to a file
-        audio_path, samplerate = self.extract_and_save_audio_from_video(params['video_path'])
+        self.extract_and_save_audio_from_video(video_path, audio_path)
 
         # Split audio on voices and noise
         voices_path, drums_path, bass_path, other_path = self.audio_separation_model(audio_path)
 
-        # Mix noise
-        self.mix_audio(
-            [
-                drums_path,
-                bass_path,
-                other_path
-            ],
-            self.NOISE_PATH
-        )
-
         # Read voices
-        voices = self.read_audio(voices_path)
+        voices = AudioSegment.from_file(voices_path, format='wav')
 
         # Voice to text + timestamps
-        texts_and_timestamps = self.stt_model(voices)
+        texts_and_timestamps, _ = self.stt_model(voices_path)
+
+        # Save translations to file
+        with open(translations_with_timestamps_file_path, "w", encoding='utf-8') as translations_with_timestamps_file:
+            json.dump(texts_and_timestamps, translations_with_timestamps_file, ensure_ascii=False, indent=4)
+
+        # Create empty sound for filling speakers later
+        self.create_empty_sound(audio_path, translated_voices_path)
 
         # Process each phrase separately
-        translated_voices = np.zeros_like(voices)
         for text_and_timestamp in texts_and_timestamps:
+            # Timestamp to audio indices
+            start_timestamp_ms = int(text_and_timestamp["start"] * 1000)
+            end_timestamp_ms = int(text_and_timestamp["end"] * 1000)
+
             # Translate phrase
-            translated_text = self.translation_model(text_and_timestamp["text"], text_and_timestamp["language"])
+            translated_text = self.translation_model(text_and_timestamp["text"], params["language"])
 
-            # Get reference for voice cloning
-            voice_reference = voices[text_and_timestamp["start"]:text_and_timestamp["end"]]
-
-            # Save reference for voice cloning
-            self.save_audio(voice_reference, self.VOICE_REFERENCE_PATH, samplerate)
+            # Get reference for voice cloning and save it to a file
+            voice_reference = voices[start_timestamp_ms:end_timestamp_ms]
+            voice_reference.export(voice_reference_path, format="wav")
 
             # Speech to text
-            translated_voice = self.tts_model(translated_text, self.VOICE_REFERENCE_PATH)
-
-            # Fit to the length of initial voice
-            translated_phrase_fitted = self.fit_audio_length(
-                translated_voice,
-                text_and_timestamp["end"] - text_and_timestamp["start"]
-            )
+            self.tts_model(translated_text, params["language"], voice_reference_path, translated_voice_path)
 
             # Add voice using timestamps
             self.add_audio_by_timestamp(
-                translated_phrase_fitted,
-                translated_voices,
-                text_and_timestamp["start"],
-                text_and_timestamp["end"]
+                translated_voice_path,
+                translated_voices_path,
+                start_timestamp_ms
             )
-
-        # Save audio to file
-        self.save_audio(translated_voices, self.TRANSLATED_VOICES_PATH, samplerate)
 
         # Add noise back
         self.mix_audio(
             [
-                self.TRANSLATED_VOICES_PATH,
-                self.NOISE_PATH
+                translated_voices_path,
+                drums_path,
+                bass_path,
+                other_path
             ],
-            self.TRANSLATED_AUDIO_PATH
+            translated_audio_path
         )
-
-        # Lipsync?
 
         # Save video with new audio
         translated_video_path = self.save_video_with_new_audio(
-            params['video_path'],
-            self.TRANSLATED_AUDIO_PATH
+            video_path,
+            translated_audio_path,
+            translated_video_path
         )
 
         return translated_video_path
