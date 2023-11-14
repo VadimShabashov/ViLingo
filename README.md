@@ -1,6 +1,6 @@
 # ViLingo
 
-The repository contains pipeline for translating russian video into a subset of most popular
+The repository contains a pipeline for translating russian video into a subset of the most popular
 languages, such as english, french, italian, portuguese...
 
 The following models were used:
@@ -12,9 +12,9 @@ The following models were used:
 Note, that each phrase is processed separately, which helps to make pronounce each phrase with the voice of 
 the corresponding speaker.
 
-Additionally, we tried to implement and test lipsync, but it wasn't fully integrated in our pipeline.
-The reason for this is that model doesn't perform well in case of multiple people on a video.
-The model implementation you can find in branch `lipsync`.
+Additionally, we tried to implement and test lipsync, but it wasn't fully integrated into our pipeline.
+The reason for this is that the lipsync model doesn't perform well in case of multiple people on a video.
+The model implementation you can find in the branch `lipsync`.
 
 
 # Examples
@@ -60,4 +60,5 @@ them sequentially without requirements.txt (that worked for us).
 
 # Hardware requirements
 
-The code was tested on with Tesla-V100 1x32GB.
+RAM: 16GB
+GPU: Tesla-V100 1x32GB.
